@@ -5,7 +5,9 @@
 """
 from _weakref import ref
 from _weakrefset import WeakSet
+from functools import partial
 from weakref import WeakMethod
+from types import LambdaType
 
 from ram_util.utilities import OrderedSet
 
@@ -15,7 +17,7 @@ from .common import AbortNotifyException
 
 
 class EventHandler:
-    __slots__ = 'subs', '__weakref__', 'owner'
+    __slots__ = 'subs', 'owner', '__weakref__',
 
     def __init__(self):
         self.subs = self.make_weak_collection()
@@ -66,7 +68,7 @@ class EventHandler:
 
 
 class HardRefEventHandler(EventHandler):
-    __slots__ = 'hard_links'
+    __slots__ = 'hard_links',
 
     def __init__(self):
         super(HardRefEventHandler, self).__init__()
@@ -79,6 +81,26 @@ class HardRefEventHandler(EventHandler):
     def hard_unsubscribe(self, func: Callable):
         self.unsubscribe(func)
         self.hard_links.remove(func)
+
+    def soft_subscribe(self, func: Callable):
+        super(HardRefEventHandler, self).subscribe(func)
+
+    def soft_unsubscribe(self, func: Callable):
+        super(HardRefEventHandler, self).unsubscribe(func)
+
+    def subscribe(self, func: Callable):
+        if isinstance(func, partial):
+            self.hard_subscribe(func)
+        elif isinstance(func, LambdaType):
+            self.hard_subscribe(func)
+        else:
+            super(HardRefEventHandler, self).subscribe(func)
+
+    def unsubscribe(self, func: Callable):
+        if func in self.subs:
+            self.subs.remove(func)
+        if func in self.hard_links:
+            self.hard_links.remove(func)
 
 
 class EventFunc(EventHandler):
@@ -108,13 +130,20 @@ class EventFunc(EventHandler):
 
 
 class BoundEvent:
-    __slots__ = 'event_handler', '__self__', '__func__', 'name', '__weakref__'
+    __slots__ = 'event_handler', '__self__', '__func__', 'name', 'origin', '__weakref__'
 
-    def __init__(self, func, obj_ref, event_handler: EventHandler, name):
+    def __init__(self, func, obj_ref, event_handler: EventHandler, name, origin):
         self.__self__ = obj_ref
         self.__func__ = func
         self.event_handler = event_handler
         self.name = name
+        self.origin = origin
+
+    def __eq__(self, other):
+        return self.__func__ is other.__func__
+
+    def __hash__(self):
+        return hash(id(self.__func__))
 
     def make_weak_collection(self):
         return self.event_handler.make_weak_collection()
@@ -127,12 +156,15 @@ class BoundEvent:
         return self.event_handler.__getattribute__(item)
 
     def __call__(self, *args, **kwargs):
-        try:
-            ret = self.__func__(self.__self__, *args, **kwargs)
-        except AbortNotifyException as e:
-            return e.return_value
-        else:
-            self.event_handler(*args, **kwargs)
+        ret = None
+        if not self.origin:
+            try:
+                ret = self.__func__(self.__self__, *args, **kwargs)
+            except AbortNotifyException as e:
+                return e.return_value
+            self.origin = ret
+        self.event_handler(*args, **kwargs)
+        self.origin = None
         return ret
 
     def duplicate(self) -> 'BoundEvent':
@@ -140,6 +172,7 @@ class BoundEvent:
 
     def switch_event_handler(self, event_handler: EventHandler):
         event_handler.update(self.event_handler)
+        event_handler.owner = self.event_handler.owner
         setattr(self.__self__, self.name, event_handler)
 
 
@@ -205,19 +238,17 @@ class EventDescriptor:
             istc = self.handler_t()
             istc.owner = self.true_owner
             setattr(instance, event_reg, istc)
-        if self.no_origin:
-            return istc
-        else:
-            return self.bound_event_t(self.origin, instance, istc, event_reg)
+        return self.bound_event_t(self.origin, instance, istc, event_reg, self.no_origin)
 
 
 class WeakBoundEvent(WeakMethod):
-    __slots__ = ('event_handler', 'name')
+    __slots__ = ('event_handler', 'name', 'origin')
 
     def __new__(cls, meth, event_handler, callback=None):
         obj = super(WeakBoundEvent, cls).__new__(cls, meth, callback=callback)
         obj.event_handler = ref(event_handler)
         obj.name = meth.name
+        obj.origin = meth.origin
         return obj
 
     def __init__(self, meth, event_handler, callback=None):
@@ -229,7 +260,7 @@ class WeakBoundEvent(WeakMethod):
         event_handler = self.event_handler()
         if (obj is None) or (func is None) or (event_handler is None):
             return None
-        return self._meth_type(func, obj, event_handler, self.name)
+        return self._meth_type(func, obj, event_handler, self.name, self.origin)
 
 
 class OrderedWeakSet(WeakSet):
