@@ -646,22 +646,3 @@ def test_inheritance_modes():
 
 test_inheritance_modes()
 
-
-def test_weak_partial():
-    @notify()
-    def hookme():
-        pass
-    global flag
-    flag = False
-    class Encap:
-        def listener(self, param):
-            global flag
-            flag = param
-    e = Encap()
-    hookme.subscribe(partial(e.listener, True))
-    assert flag is False
-    hookme()
-    assert flag is True
-    flag = False
-
-test_weak_partial()
