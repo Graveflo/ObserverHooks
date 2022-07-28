@@ -76,10 +76,10 @@ class HardRefEventHandler(EventHandler):
 
     def hard_subscribe(self, func: Callable):
         self.hard_links.add(func)
-        self.subscribe(func)
+        super(HardRefEventHandler, self).subscribe(func)
 
     def hard_unsubscribe(self, func: Callable):
-        self.unsubscribe(func)
+        super(HardRefEventHandler, self).unsubscribe(func)
         self.hard_links.remove(func)
 
     def soft_subscribe(self, func: Callable):
@@ -98,7 +98,7 @@ class HardRefEventHandler(EventHandler):
 
     def unsubscribe(self, func: Callable):
         if func in self.subs:
-            self.subs.remove(func)
+            super(HardRefEventHandler, self).unsubscribe(func)
         if func in self.hard_links:
             self.hard_links.remove(func)
 
