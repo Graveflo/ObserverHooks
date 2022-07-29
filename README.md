@@ -91,9 +91,49 @@ with BlockSideEffects(a.notify_some_action, only=(a_some_action,)):
     a.notify_some_action()
 ```
 
+The HardRefEventHandler will hold non-weak references to lambda and partial functions
+```python
+from observer_hooks import notify, HardRefEventHandler
+
+@notify(handler_t=HardRefEventHandler)
+def notify_some_action():
+    return 'return value'
+
+def some_action():
+    print('Hi')
+
+def scope():
+    notify_some_action.subscribe(lambda: some_action())
+
+scope()
+print(notify_some_action())
+```
+
+The "pass_ref" parameter will pass the "self" reference to side-effect functions and the switch_event_handler method on descriptors will switch the event handler type
+```python
+from observer_hooks import notify, HardRefEventHandler
+class SomeClass:
+    @notify(pass_ref=True)
+    def method(self):
+        pass
+
+s = SomeClass()
+
+def method(other):
+    assert other is s
+
+s.method.switch_event_handler(HardRefEventHandler())
+s.method.subscribe(method)
+s.method()
+```
+
+Notes:
+- The parameter "auto_fire" will disable all side effects and instead the .emit() function can be used to manually trigger the side effects
+- Redefined methods in child classes also need the decorator and will override behavior to the specifications of the new decorator
+- Inherited methods will only fire once even if they are re-defined and super is called
+- Inherited methods do not need to be re-defined
 
 # Future plans
 
 - Implement access to the originating functions return value
   - Either a member of the object that replaces the function for non-thread safe applications or a special parameter
-- Implement access to notifying class to the notified functions similar to above

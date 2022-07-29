@@ -646,3 +646,38 @@ def test_inheritance_modes():
 
 test_inheritance_modes()
 
+
+def test_lambda():
+    class SomeClass:
+        @notify(handler_t=HardRefEventHandler)
+        def method(self):
+            pass
+    sv = []
+    s = SomeClass()
+    s.method.subscribe(lambda: sv.append(1))
+    s.method()
+    assert len(sv) == 1
+
+
+def test_pas_ref():
+    class SomeClass:
+        @notify(pass_ref=True)
+        def method(self):
+            pass
+    sv = []
+    s = SomeClass()
+
+    class SomeOtherClass:
+        @notify()
+        def method(self, other):
+            sv.append(1)
+            assert other is s
+
+    b = SomeOtherClass()
+    b.method.switch_event_handler(HardRefEventHandler())
+    s.method.subscribe(b.method)
+    b.method.subscribe(lambda x: sv.append(1))
+    s.method()
+    assert len(sv) == 2
+test_pas_ref()
+test_lambda()

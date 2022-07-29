@@ -17,10 +17,11 @@ from .common import AbortNotifyException
 
 
 class EventHandler:
-    __slots__ = 'subs', 'owner', '__weakref__',
+    __slots__ = 'subs', 'owner', 'pass_ref', '__weakref__',
 
     def __init__(self):
         self.subs = self.make_weak_collection()
+        self.pass_ref = 0
 
     def make_weak_collection(self):
         return OrderedWeakSet()
@@ -48,6 +49,10 @@ class EventHandler:
     def __call__(self, *args, **kwargs):
         for subf in self.subs:
             subf(*args, **kwargs)
+
+    def mod_call(self, *args, **kwargs):
+        for subf in self.subs:
+            subf(*args[self.pass_ref:], **kwargs)
 
     def __len__(self):
         return len(self.subs)
@@ -103,41 +108,14 @@ class HardRefEventHandler(EventHandler):
             self.hard_links.remove(func)
 
 
-class EventFunc(EventHandler):
-    __slots__ = 'func', 'auto_fire'
+class FunctionStub:
+    __slots__ = 'event_handler', '__func__', 'origin', 'auto', '__weakref__'
 
-    def __init__(self, func: Callable, auto_fire=True):
-        super(EventFunc, self).__init__()
-        self.func = func
-        self.auto_fire = auto_fire
-
-    @property
-    def event_handler(self) -> EventHandler:
-        return self
-
-    def __call__(self, *args, **kwargs):
-        try:
-            ret = self.func(*args, **kwargs)
-        except AbortNotifyException as e:
-            return e.return_value
-        else:
-            if self.auto_fire:
-                super(EventFunc, self).__call__(*args, **kwargs)
-        return ret
-
-    def emit(self, *args, **kwargs):
-        super(EventFunc, self).__call__(*args, **kwargs)
-
-
-class BoundEvent:
-    __slots__ = 'event_handler', '__self__', '__func__', 'name', 'origin', '__weakref__'
-
-    def __init__(self, func, obj_ref, event_handler: EventHandler, name, origin):
-        self.__self__ = obj_ref
+    def __init__(self, func: Callable, event_handler: EventHandler, origin: bool, auto: bool):
         self.__func__ = func
         self.event_handler = event_handler
-        self.name = name
         self.origin = origin
+        self.auto = auto
 
     def __eq__(self, other):
         return self.__func__ is other.__func__
@@ -150,45 +128,73 @@ class BoundEvent:
 
     def __getattr__(self, item):
         try:
-            return super(BoundEvent, self).__getattr__(item)
+            return super(FunctionStub, self).__getattr__(item)
         except AttributeError:
             pass
         return self.event_handler.__getattribute__(item)
 
     def __call__(self, *args, **kwargs):
         ret = None
-        if not self.origin:
+        if self.origin:
             try:
-                ret = self.__func__(self.__self__, *args, **kwargs)
+                ret = self.__func__(*args, **kwargs)
             except AbortNotifyException as e:
                 return e.return_value
-            self.origin = ret
-        self.event_handler(*args, **kwargs)
-        self.origin = None
+        if self.auto:
+            self.event_handler.mod_call(*args, **kwargs)
         return ret
 
-    def duplicate(self) -> 'BoundEvent':
-        return BoundEvent(self.__func__, self.__self__, self.event_handler.duplicate())
+    def duplicate(self) -> 'FunctionStub':
+        return FunctionStub(self.__func__, self.event_handler.duplicate(), self.origin,self.auto)
 
     def switch_event_handler(self, event_handler: EventHandler):
         event_handler.update(self.event_handler)
+        event_handler.pass_ref = self.event_handler.pass_ref
         event_handler.owner = self.event_handler.owner
+
+    def __iadd__(self, other):
+        self.event_handler.subscribe(other)
+        return self
+
+    def __isub__(self, other):
+        self.event_handler.unsubscribe(other)
+        return self
+
+
+class BoundEvent(FunctionStub):
+    __slots__ = '__self__', 'name'
+
+    def __init__(self, obj_ref: object, func: Callable, event_handler: EventHandler, name: str, origin: bool, auto: bool):
+        super(BoundEvent, self).__init__(func, event_handler, origin, auto)
+        self.__self__ = obj_ref
+        self.name = name
+
+    def __call__(self, *args, **kwargs):
+        return super(BoundEvent, self).__call__(self.__self__, *args, **kwargs)
+
+    def duplicate(self) -> 'BoundEvent':
+        return BoundEvent(self.__self__, self.__func__, self.event_handler.duplicate(), self.name, self.origin, self.auto)
+
+    def switch_event_handler(self, event_handler: EventHandler):
+        super(BoundEvent, self).switch_event_handler(event_handler)
         setattr(self.__self__, self.name, event_handler)
 
+    def get_primitives(self):
+        return self.name, self.origin, self.auto
 
-class ManualBoundEvent(BoundEvent):  # Must be discrete class for the WeakBoundMethod hack
-    def __call__(self, *args, **kwargs):
-        try:
-            ret = self.__func__(self.__self__, *args, **kwargs)
-        except AbortNotifyException as e:
-            return e.return_value
-        return ret
+    def set_primitives(self, auto, name, origin):
+        self.auto = auto
+        self.name = name
+        self.origin = origin
+
+    def emit(self, *args, **kwargs):
+        self.event_handler.mod_call(self.__self__, *args, **kwargs)
 
 
 class BlockSideEffects:
     __slots__ = 'bound_event', 'only'
 
-    def __init__(self, bound_event: BoundEvent | EventFunc, only: Iterable[Callable] | bool = False):
+    def __init__(self, bound_event: FunctionStub, only: Iterable[Callable] | bool = False):
         self.bound_event = bound_event
         if only:
             onlyb = bound_event.event_handler.make_weak_collection()
@@ -209,10 +215,10 @@ class BlockSideEffects:
 
 
 class EventDescriptor:
-    __slots__ = 'true_owner', 'origin', 'event_reg', 'no_origin', 'bound_event_t', 'handler_t'
+    __slots__ = 'true_owner', 'origin', 'event_reg', 'no_origin', 'bound_event_t', 'handler_t', 'auto', 'pass_ref'
 
     def __init__(self, stub: Callable, bound_event_t: Type[BoundEvent], event_name: str = None, no_origin=False,
-                 handler_t=EventHandler):
+                 handler_t=EventHandler, auto=True, pass_ref=1):
         if event_name is None:
             event_name = '_' + stub.__name__
         self.origin = stub
@@ -220,6 +226,8 @@ class EventDescriptor:
         self.no_origin = no_origin
         self.bound_event_t = bound_event_t
         self.handler_t = handler_t
+        self.auto = auto
+        self.pass_ref = pass_ref
 
     def __set_name__(self, owner, name):
         if not hasattr(self, 'true_owner'):
@@ -233,22 +241,22 @@ class EventDescriptor:
         try:
             istc = getattr(instance, event_reg)
             if istc.owner is not self.true_owner:  # This is true when this is a super() call
-                istc = lambda *x, **y: None
+                return partial(self.origin, instance)
         except AttributeError:
             istc = self.handler_t()
+            istc.pass_ref = self.pass_ref
             istc.owner = self.true_owner
             setattr(instance, event_reg, istc)
-        return self.bound_event_t(self.origin, instance, istc, event_reg, self.no_origin)
+        return self.bound_event_t(instance, self.origin, istc, event_reg, not self.no_origin, self.auto)
 
 
 class WeakBoundEvent(WeakMethod):
-    __slots__ = ('event_handler', 'name', 'origin')
+    __slots__ = 'event_handler', 'prims'
 
     def __new__(cls, meth, event_handler, callback=None):
         obj = super(WeakBoundEvent, cls).__new__(cls, meth, callback=callback)
         obj.event_handler = ref(event_handler)
-        obj.name = meth.name
-        obj.origin = meth.origin
+        obj.prims = meth.get_primitives()
         return obj
 
     def __init__(self, meth, event_handler, callback=None):
@@ -260,7 +268,7 @@ class WeakBoundEvent(WeakMethod):
         event_handler = self.event_handler()
         if (obj is None) or (func is None) or (event_handler is None):
             return None
-        return self._meth_type(func, obj, event_handler, self.name, self.origin)
+        return self._meth_type(obj, func, event_handler, *self.prims)
 
 
 class OrderedWeakSet(WeakSet):
