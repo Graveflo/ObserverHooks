@@ -127,6 +127,38 @@ s.method.subscribe(method)
 s.method()
 ```
 
+Inherit or copy parameters from a superclasses descriptor with 'notify_copy_super'
+
+```python
+from observer_hooks import notify, notify_copy_super
+
+
+class A:
+    @notify(pass_ref=True, no_origin=True, auto_fire=False)
+    def method(self):
+        print('this wont print')
+
+
+class B(A):
+    pass
+
+
+class C(B):
+    @notify_copy_super(auto_fire=True)
+    def method(self):
+        print('neither will this')
+
+
+def side_effect(x):
+    print('hi', x)
+
+
+c = C()
+c.method.subscribe(side_effect)
+c.method()
+```
+
+
 Notes:
 - The parameter "auto_fire" will disable all side effects and instead the .emit() function can be used to manually trigger the side effects
 - Redefined methods in child classes also need the decorator and will override behavior to the specifications of the new decorator

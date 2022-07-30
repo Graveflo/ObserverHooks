@@ -19,9 +19,9 @@ from .common import AbortNotifyException
 class EventHandler:
     __slots__ = 'subs', 'owner', 'pass_ref', '__weakref__',
 
-    def __init__(self):
+    def __init__(self, pass_self=False):
         self.subs = self.make_weak_collection()
-        self.pass_ref = 0
+        self.pass_ref = 0 if pass_self else 1
 
     def make_weak_collection(self):
         return OrderedWeakSet()
@@ -75,8 +75,8 @@ class EventHandler:
 class HardRefEventHandler(EventHandler):
     __slots__ = 'hard_links',
 
-    def __init__(self):
-        super(HardRefEventHandler, self).__init__()
+    def __init__(self, **kwargs):
+        super(HardRefEventHandler, self).__init__(**kwargs)
         self.hard_links = set()
 
     def hard_subscribe(self, func: Callable):
@@ -191,6 +191,61 @@ class BoundEvent(FunctionStub):
         self.event_handler.mod_call(self.__self__, *args, **kwargs)
 
 
+class EventDescriptor:
+    __slots__ = 'true_owner', 'origin', 'event_name', 'no_origin', 'bound_event_t', 'handler_t', 'auto', 'pass_ref'
+
+    def __init__(self, stub: Callable, bound_event_t: Type[BoundEvent], event_name: str = None, no_origin=False,
+                 handler_t=EventHandler, auto=True, pass_ref=1):
+        if event_name is None:
+            event_name = '_' + stub.__name__
+        self.origin = stub
+        self.event_name = event_name
+        self.no_origin = no_origin
+        self.bound_event_t = bound_event_t
+        self.handler_t = handler_t
+        self.auto = auto
+        self.pass_ref = pass_ref
+
+    def __set_name__(self, owner, name):
+        if not hasattr(self, 'true_owner'):
+            self.true_owner = owner
+        # for tt in owner.__mro__[1:]:
+        #     if name in dir(tt):
+        #         object.__getattribute__(tt, name).true_owner = tt
+
+    def __get__(self, instance: object, owner: Type) -> BoundEvent | Callable:
+        event_reg = self.event_name
+        try:
+            istc = getattr(instance, event_reg)
+            if istc.owner is not self.true_owner:  # This is true when this is a super() call
+                return partial(self.origin, instance)
+        except AttributeError:
+            istc = self.handler_t()
+            istc.pass_ref = self.pass_ref
+            istc.owner = self.true_owner
+            setattr(instance, event_reg, istc)
+        return self.bound_event_t(instance, self.origin, istc, event_reg, not self.no_origin, self.auto)
+
+
+class SuperCopyDescriptor(EventDescriptor):
+    __slots__ = tuple()
+
+    def __init__(self, stub, **kwargs):
+        self.origin = stub
+        kwargs['bound_event_t'] = None
+        self.event_name = kwargs
+
+    def __set_name__(self, owner, name):
+        bound_method: BoundEvent = getattr(super(owner, type('', (owner,), {'__init__': lambda x: None})()), name)
+        descriptor: EventDescriptor = object.__getattribute__(bound_method.event_handler.owner, name)
+        for sn, val in self.event_name.items():
+            if val is None:
+                self.__setattr__(sn, getattr(descriptor, sn))
+            else:
+                self.__setattr__(sn, val)
+        super(SuperCopyDescriptor, self).__set_name__(owner, name)
+
+
 class BlockSideEffects:
     __slots__ = 'bound_event', 'only'
 
@@ -214,61 +269,25 @@ class BlockSideEffects:
         self.bound_event.update(self.only)
 
 
-class EventDescriptor:
-    __slots__ = 'true_owner', 'origin', 'event_reg', 'no_origin', 'bound_event_t', 'handler_t', 'auto', 'pass_ref'
-
-    def __init__(self, stub: Callable, bound_event_t: Type[BoundEvent], event_name: str = None, no_origin=False,
-                 handler_t=EventHandler, auto=True, pass_ref=1):
-        if event_name is None:
-            event_name = '_' + stub.__name__
-        self.origin = stub
-        self.event_reg = event_name
-        self.no_origin = no_origin
-        self.bound_event_t = bound_event_t
-        self.handler_t = handler_t
-        self.auto = auto
-        self.pass_ref = pass_ref
-
-    def __set_name__(self, owner, name):
-        if not hasattr(self, 'true_owner'):
-            self.true_owner = owner
-        # for tt in owner.__mro__[1:]:
-        #     if name in dir(tt):
-        #         object.__getattribute__(tt, name).true_owner = tt
-
-    def __get__(self, instance: object, owner: Type) -> BoundEvent | Callable:
-        event_reg = self.event_reg
-        try:
-            istc = getattr(instance, event_reg)
-            if istc.owner is not self.true_owner:  # This is true when this is a super() call
-                return partial(self.origin, instance)
-        except AttributeError:
-            istc = self.handler_t()
-            istc.pass_ref = self.pass_ref
-            istc.owner = self.true_owner
-            setattr(instance, event_reg, istc)
-        return self.bound_event_t(instance, self.origin, istc, event_reg, not self.no_origin, self.auto)
-
-
 class WeakBoundEvent(WeakMethod):
-    __slots__ = 'event_handler', 'prims'
+    __slots__ = 'evh_name', 'prims'
 
-    def __new__(cls, meth, event_handler, callback=None):
+    def __new__(cls, meth, callback=None):
         obj = super(WeakBoundEvent, cls).__new__(cls, meth, callback=callback)
-        obj.event_handler = ref(event_handler)
+        obj.evh_name = meth.name
         obj.prims = meth.get_primitives()
         return obj
 
-    def __init__(self, meth, event_handler, callback=None):
+    def __init__(self, meth, callback=None):
         super(WeakBoundEvent, self).__init__(meth, callback)
 
     def __call__(self):
         obj = super(WeakMethod, self).__call__()
         func = self._func_ref()
-        event_handler = self.event_handler()
-        if (obj is None) or (func is None) or (event_handler is None):
+        evh_name = self.evh_name
+        if (obj is None) or (func is None):
             return None
-        return self._meth_type(obj, func, event_handler, *self.prims)
+        return self._meth_type(obj, func, getattr(obj, evh_name), *self.prims)
 
 
 class OrderedWeakSet(WeakSet):
@@ -287,7 +306,7 @@ class OrderedWeakSet(WeakSet):
             if self._pending_removals:
                 self._commit_removals()
             if isinstance(func, BoundEvent):
-                self.data.add(WeakBoundEvent(func, func.event_handler, callback=self._remove))
+                self.data.add(WeakBoundEvent(func, callback=self._remove))
             else:
                 self.data.add(WeakMethod(func, self._remove))
         else:
@@ -298,7 +317,7 @@ class OrderedWeakSet(WeakSet):
             if self._pending_removals:
                 self._commit_removals()
             if isinstance(func, BoundEvent):
-                self.data.remove(WeakBoundEvent(func, func.event_handler))
+                self.data.remove(WeakBoundEvent(func))
             else:
                 self.data.remove(WeakMethod(func))
         else:
