@@ -21,8 +21,7 @@ def notify_fork(stub: Callable, event_name: str = None, no_origin=False, is_meth
 
 
 def notify(event_name: str = None, no_origin=False, is_method=None, auto_fire=True, handler_t=EventHandler,
-           pass_ref=False) -> Callable[
-    [...], BoundEvent | FunctionStub]:
+           pass_ref=False) -> Callable[[...], BoundEvent | FunctionStub]:
     return partial(notify_fork, event_name=event_name, no_origin=no_origin, is_method=is_method, auto_fire=auto_fire,
                    handler_t=handler_t, pass_ref=pass_ref)
 

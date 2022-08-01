@@ -209,9 +209,6 @@ class EventDescriptor:
     def __set_name__(self, owner, name):
         if not hasattr(self, 'true_owner'):
             self.true_owner = owner
-        # for tt in owner.__mro__[1:]:
-        #     if name in dir(tt):
-        #         object.__getattribute__(tt, name).true_owner = tt
 
     def __get__(self, instance: object, owner: Type) -> BoundEvent | Callable:
         event_reg = self.event_name
