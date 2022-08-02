@@ -1,5 +1,5 @@
 # observer_hooks
-A quick & dirty, but flexable way to attach side effects to functions and methods.
+An easy way to attach side effects to functions and methods.
 Intended to accomplish something similar to the "observer pattern" in simple context.
 
 For methods, an instance member to hold weak references to functions and methods is automatically created. By default
@@ -7,6 +7,11 @@ the instance member is the same name as the method with an underscore prepended.
 argument.
 
 Side effects can be chained normally.
+
+## Install
+```angular2html
+pip install observer-hooks
+```
 
 ## Usage
 
@@ -160,8 +165,8 @@ c.method()
 
 
 Notes:
-- The parameter "auto_fire" will disable all side effects and instead the .emit() function can be used to manually trigger the side effects
-- Redefined methods in child classes also need the decorator and will override behavior to the specifications of the new decorator
+- The parameter "auto_fire", when set to false, will disable all side effects and instead the .emit() function can be used to manually trigger the side effects
+- Redefined methods in child classes also need a decorator to retain the behavior and will override behavior to the specifications of the new decorator
 - Inherited methods will only fire once even if they are re-defined and super is called
 - Inherited methods do not need to be re-defined
 

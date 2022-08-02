@@ -3,17 +3,14 @@
 
 @author: ☙ Ryan McConnell ♈♑ ❧
 """
-from _weakref import ref
 from _weakrefset import WeakSet
 from functools import partial
 from weakref import WeakMethod
 from types import LambdaType
 
-from ram_util.utilities import OrderedSet
-
 from typing import Callable, Iterable, Type
 
-from .common import AbortNotifyException
+from .common import AbortNotifyException, OrderedSet
 
 
 class EventHandler:
@@ -148,9 +145,12 @@ class FunctionStub:
         return FunctionStub(self.__func__, self.event_handler.duplicate(), self.origin,self.auto)
 
     def switch_event_handler(self, event_handler: EventHandler):
-        event_handler.update(self.event_handler)
-        event_handler.pass_ref = self.event_handler.pass_ref
-        event_handler.owner = self.event_handler.owner
+        if type(event_handler) is type(self.event_handler):
+            self.event_handler.update(event_handler)
+        else:
+            event_handler.update(self.event_handler)
+            event_handler.pass_ref = self.event_handler.pass_ref
+            event_handler.owner = self.event_handler.owner
 
     def __iadd__(self, other):
         self.event_handler.subscribe(other)
