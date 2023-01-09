@@ -2,7 +2,7 @@ import inspect
 from functools import partial
 from typing import Callable
 
-from observer_hooks.ObserverHooks import BoundEvent, EventDescriptor, EventHandler, FunctionStub, SuperCopyDescriptor
+from observer_hooks.observer_hooks import BoundEvent, EventDescriptor, EventHandler, FunctionStub, SuperCopyDescriptor
 
 
 def notify_fork(stub: Callable, event_name: str = None, no_origin=False, is_method=None,

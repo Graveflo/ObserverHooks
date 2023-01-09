@@ -4,11 +4,11 @@ This file is disgusting. Don't read it.
 
 @author: ☙ Ryan McConnell ♈♑ ❧
 """
-import functools
 import gc
 import random
 
 from observer_hooks import *
+from observer_hooks.block_events import BlockSideEffects
 
 
 class ImplicitSlots(object):
@@ -138,7 +138,7 @@ def test_subscribe_static(method):
         local.append(f)
         return f + 5
 
-    method().__iadd__(hooked)
+    method().subscribe(hooked)
     assert 7 == method()(7)
     assert len(local) == 1
     assert local[0] == 7
@@ -151,11 +151,11 @@ def test_add_remove_static(method):
         local.append(f)
         return f + 5
 
-    method().__iadd__(hooked)
+    method().subscribe(hooked)
     rnd = random.randint(1, 100)
     assert rnd == method()(rnd)
     assert local[0] == rnd
-    method().__isub__(hooked)
+    method().unsubscribe(hooked)
     rnd2 = random.randint(1, 100)
     assert rnd2 == method()(rnd2)
     assert len(local) == 1
@@ -165,12 +165,12 @@ def test_add_remove_static(method):
 def test_add_remove_dynamic(method):
     sr = SRmoteClass()
     assert len(sr.calls) == 0
-    method().__iadd__(sr.hook_me)
+    method().subscribe(sr.hook_me)
     rnd = random.randint(1, 100)
     assert rnd == method()(rnd)
     assert len(sr.calls) == 1
     assert sr.calls[0] == rnd
-    method().__isub__(sr.hook_me)
+    method().unsubscribe(sr.hook_me)
     rnd2 = random.randint(1, 100)
     assert rnd2 == method()(rnd2)
     assert len(sr.calls) == 1
@@ -180,7 +180,7 @@ def test_add_remove_dynamic(method):
 def test_garbage_collect_remove(method):
     sr = SRmoteClass()
     calls = sr.calls
-    method().__iadd__(sr.hook_me)
+    method().subscribe(sr.hook_me)
     rnd = random.randint(1, 100)
     assert len(sr.calls) == 0
     assert rnd == method()(rnd)
@@ -205,7 +205,7 @@ def test_chain_call(method):
             return 0
 
     sr = Proxynotify()
-    method().__iadd__(sr.hook_me)
+    method().subscribe(sr.hook_me)
     global outer_flag
     try:
         outer_flag = False
@@ -213,7 +213,7 @@ def test_chain_call(method):
         def some_hooked(hb:int):
             global outer_flag
             outer_flag = True
-        sr.hook_me.__iadd__(some_hooked)
+        sr.hook_me.subscribe(some_hooked)
         assert len(sr.calls) == 0
         assert not outer_flag
         rnd = random.randint(1, 100)
@@ -232,7 +232,7 @@ def test_subscribe_block_all(method):
         local.append(f)
         return f + 5
 
-    method().__iadd__(hooked)
+    method().subscribe(hooked)
     with BlockSideEffects(method()):
         assert 7 == method()(7)
     assert len(local) == 0
@@ -242,7 +242,7 @@ def test_subscribe_block_all(method):
         local.append(f)
         return f
 
-    method().__iadd__(hooked2)
+    method().subscribe(hooked2)
     with BlockSideEffects(method()):
         assert 7 == method()(7)
     assert len(local) == 0
@@ -256,13 +256,13 @@ def test_subscribe_block_selective(method):
         local.append(f)
         return f + 5
 
-    method().__iadd__(hooked)
+    method().subscribe(hooked)
 
     def hooked2(f):
         local.append(f)
         return f
 
-    method().__iadd__(hooked2)
+    method().subscribe(hooked2)
     with BlockSideEffects(method(), only=(hooked,)):
         assert 7 == method()(7)
     assert len(local) == 1
@@ -289,8 +289,8 @@ def test_subscribe_block_selective_methods(method):
             return f + 5
     hok = Hok(local)
     hok2 = Hok2(local)
-    method().__iadd__(hok.hooked)
-    method().__iadd__(hok2.hooked)
+    method().subscribe(hok.hooked)
+    method().subscribe(hok2.hooked)
 
     with BlockSideEffects(method(), only=(hok.hooked,)):
         assert 7 == method()(7)
@@ -320,7 +320,7 @@ def test_no_autofire(method):
 
     hok = Hok(local)
     hok.hooked.subscribe(side_effect)
-    method().__iadd__(hok.hooked)
+    method().subscribe(hok.hooked)
 
     assert 7 == method()(7)
     assert len(local) == 1
@@ -376,7 +376,7 @@ def test_double_dip(cls, method, test_func=do_std):
     def failure(*args, **kwargs):
         raise TestingException()
 
-    another.method.__iadd__(failure)
+    another.method.subscribe(failure)
     try:
         test_func(method)
     except TestingException:
@@ -454,7 +454,7 @@ def test_no_origin_method():
 
             assert method()() == None
             assert not outer_flag
-            method().__iadd__(some_hooked)
+            method().subscribe(some_hooked)
             assert not outer_flag
             method()()
             assert outer_flag
@@ -498,8 +498,8 @@ def test_static_method_chain():
         assert not outer_flag
         assert not outer_flag2
         assert not outer_flag3
-        some_hooked.__iadd__(some_hooked2)
-        some_hooked2.__iadd__(some_hooked3)
+        some_hooked.subscribe(some_hooked2)
+        some_hooked2.subscribe(some_hooked3)
         some_hooked3 += some_hooked4
         assert not outer_flag
         assert not outer_flag2

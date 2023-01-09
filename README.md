@@ -30,6 +30,7 @@ def side_effect(param):
 
 some_function.subscribe(side_effect)
 assert some_function(1) == 'param: 1'
+# this will print "1"
 ```
 
 Attach a side effect to a method:
@@ -51,6 +52,7 @@ class B:
 
 b = B(A())
 b.a.notify_some_action()
+# this will print "received"
 ```
 
 Example with __slots__:
@@ -70,11 +72,15 @@ def a_some_action():
 a = A()
 a.notify_some_action.subscribe(a_some_action)
 a.notify_some_action()
+# this will print "received"
 ```
 
 Block certain side effects from firing:
+
 ```python
-from observer_hooks import notify, BlockSideEffects
+from observer_hooks import notify
+from observer_hooks.block_events import BlockSideEffects
+
 
 class A:
     __slots__ = '_notify_some_action',
@@ -83,11 +89,14 @@ class A:
     def notify_some_action(self):
         pass
 
+
 def a_some_action():
     print('blocked')
 
+
 def a_some_action2():
     print('not blocked')
+
 
 a = A()
 a.notify_some_action.subscribe(a_some_action)

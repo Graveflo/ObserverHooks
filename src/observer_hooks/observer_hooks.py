@@ -68,13 +68,16 @@ class EventHandler:
     def emit(self, *args, **kwargs):
         return self.__call__(*args, **kwargs)
 
+    def clear_side_effects(self):
+        self.subs.clear()
+
 
 class HardRefEventHandler(EventHandler):
     __slots__ = 'hard_links',
 
     def __init__(self, **kwargs):
         super(HardRefEventHandler, self).__init__(**kwargs)
-        self.hard_links = set()
+        self.hard_links = set()  # The weak collection must preserver order. this is just for references
 
     def hard_subscribe(self, func: Callable):
         self.hard_links.add(func)
@@ -104,6 +107,10 @@ class HardRefEventHandler(EventHandler):
         if func in self.hard_links:
             self.hard_links.remove(func)
 
+    def clear_hard_references(self):
+        self.hard_links.clear()
+
+
 
 class FunctionStub:
     __slots__ = 'event_handler', '__func__', 'origin', 'auto', '__weakref__'
@@ -125,10 +132,10 @@ class FunctionStub:
 
     def __getattr__(self, item):
         try:
-            return super(FunctionStub, self).__getattr__(item)
+            return object.__getattribute__(self, item)
         except AttributeError:
             pass
-        return self.event_handler.__getattribute__(item)
+        return getattr(self.event_handler, item)
 
     def __call__(self, *args, **kwargs):
         ret = None
@@ -144,13 +151,15 @@ class FunctionStub:
     def duplicate(self) -> 'FunctionStub':
         return FunctionStub(self.__func__, self.event_handler.duplicate(), self.origin,self.auto)
 
-    def switch_event_handler(self, event_handler: EventHandler):
-        if type(event_handler) is type(self.event_handler):
-            self.event_handler.update(event_handler)
-        else:
+    def switch_event_handler(self, event_handler: EventHandler, update=True):
+        if update:
             event_handler.update(self.event_handler)
-            event_handler.pass_ref = self.event_handler.pass_ref
+        event_handler.pass_ref = self.event_handler.pass_ref
+        try:
             event_handler.owner = self.event_handler.owner
+        except AttributeError:  # might not  have this if never called through descriptor
+            pass
+        self.event_handler = event_handler  # make change immediate and work for non-method wraps
 
     def __iadd__(self, other):
         self.event_handler.subscribe(other)
@@ -175,8 +184,8 @@ class BoundEvent(FunctionStub):
     def duplicate(self) -> 'BoundEvent':
         return BoundEvent(self.__self__, self.__func__, self.event_handler.duplicate(), self.name, self.origin, self.auto)
 
-    def switch_event_handler(self, event_handler: EventHandler):
-        super(BoundEvent, self).switch_event_handler(event_handler)
+    def switch_event_handler(self, event_handler: EventHandler, update=True):
+        super(BoundEvent, self).switch_event_handler(event_handler, update=update)
         setattr(self.__self__, self.name, event_handler)
 
     def get_primitives(self):
@@ -214,14 +223,19 @@ class EventDescriptor:
         event_reg = self.event_name
         try:
             istc = getattr(instance, event_reg)
-            if istc.owner is not self.true_owner:  # This is true when this is a super() call
-                return partial(self.origin, instance)
         except AttributeError:
             istc = self.handler_t()
             istc.pass_ref = self.pass_ref
             istc.owner = self.true_owner
             setattr(instance, event_reg, istc)
-        return self.bound_event_t(instance, self.origin, istc, event_reg, not self.no_origin, self.auto)
+        try:
+            owner = istc.owner
+        except AttributeError:
+            istc.owner = self.true_owner
+        if istc.owner is not self.true_owner:  # This is true when this is a super() call
+            return partial(self.origin, instance)
+        else:
+            return self.bound_event_t(instance, self.origin, istc, event_reg, not self.no_origin, self.auto)
 
 
 class SuperCopyDescriptor(EventDescriptor):
@@ -241,29 +255,6 @@ class SuperCopyDescriptor(EventDescriptor):
             else:
                 self.__setattr__(sn, val)
         super(SuperCopyDescriptor, self).__set_name__(owner, name)
-
-
-class BlockSideEffects:
-    __slots__ = 'bound_event', 'only'
-
-    def __init__(self, bound_event: FunctionStub, only: Iterable[Callable] | bool = False):
-        self.bound_event = bound_event
-        if only:
-            onlyb = bound_event.event_handler.make_weak_collection()
-            onlyb.update(only)
-            only = onlyb
-        self.only = only
-
-    def __enter__(self):
-        if self.only:
-            self.bound_event.remove_many(self.only)
-        else:
-            self.only = self.bound_event.event_handler.subs
-            self.bound_event.event_handler.subs = self.bound_event.make_weak_collection()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.bound_event.update(self.only)
 
 
 class WeakBoundEvent(WeakMethod):

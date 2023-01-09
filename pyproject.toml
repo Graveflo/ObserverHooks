@@ -4,3 +4,8 @@ requires = [
 "wheel"
 ]
 build-backend="setuptools.build_meta"
+[project]
+dependencies = ["ordered-set"]
+[tool.setuptools.dynamic]
+version = {attr = "observer_hooks.VERSION"}
+readme = {file = ["README.md"]}
