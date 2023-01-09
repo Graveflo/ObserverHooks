@@ -6,7 +6,6 @@
 from _weakrefset import WeakSet
 from functools import partial
 from weakref import WeakMethod
-from types import LambdaType
 
 from typing import Callable, Iterable, Type
 
@@ -94,9 +93,9 @@ class HardRefEventHandler(EventHandler):
         super(HardRefEventHandler, self).unsubscribe(func)
 
     def subscribe(self, func: Callable):
-        if isinstance(func, partial):
+        if hasattr(func, '__name__') and (func.__name__ == '<lambda>'):
             self.hard_subscribe(func)
-        elif isinstance(func, LambdaType):
+        elif isinstance(func, partial):
             self.hard_subscribe(func)
         else:
             super(HardRefEventHandler, self).subscribe(func)
