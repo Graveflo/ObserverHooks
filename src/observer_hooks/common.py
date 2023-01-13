@@ -1,4 +1,8 @@
-from ordered_set import OrderedSet
+# - * -coding: utf - 8 - * -
+"""
+
+@author: ☙ Ryan McConnell ♈♑ ❧
+"""
 
 
 class AbortNotifyException(Exception):

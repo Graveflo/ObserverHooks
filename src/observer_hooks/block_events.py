@@ -2,6 +2,12 @@ from typing import Iterable, Callable
 
 from observer_hooks import FunctionStub
 
+# - * -coding: utf - 8 - * -
+"""
+
+@author: ☙ Ryan McConnell ♈♑ ❧
+"""
+
 
 class FullBlockEventHandlerProxy:
     def __init__(self, event_handler):
