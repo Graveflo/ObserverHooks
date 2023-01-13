@@ -8,8 +8,8 @@ from functools import partial
 from weakref import WeakMethod
 
 from typing import Callable, Iterable, Type
-
-from .common import AbortNotifyException, OrderedSet
+from ordered_set import OrderedSet
+from .common import AbortNotifyException
 
 
 class EventHandler:
@@ -34,13 +34,17 @@ class EventHandler:
     def unsubscribe(self, func: Callable):
         self.subs.remove(func)
 
-    def __iadd__(self, other):
+    def __add__(self, other) -> bool:
+        pl = len(self.subs)
         self.subscribe(other)
-        return self
+        return len(self.subs) > pl
 
-    def __isub__(self, other):
-        self.unsubscribe(other)
-        return self
+    def __sub__(self, other):
+        try:
+            self.unsubscribe(other)
+            return True
+        except KeyError:
+            return False
 
     def __call__(self, *args, **kwargs):
         for subf in self.subs:
@@ -55,9 +59,6 @@ class EventHandler:
 
     def __iter__(self):
         return iter(self.subs)
-
-    def purge(self):
-        self.subs.clear()
 
     def duplicate(self) -> 'EventHandler':
         ev = EventHandler()
@@ -109,6 +110,9 @@ class HardRefEventHandler(EventHandler):
     def clear_hard_references(self):
         self.hard_links.clear()
 
+    def clear_side_effects(self):
+        self.clear_hard_references()
+        super().clear_side_effects()
 
 
 class FunctionStub:
@@ -160,13 +164,29 @@ class FunctionStub:
             pass
         self.event_handler = event_handler  # make change immediate and work for non-method wraps
 
-    def __iadd__(self, other):
-        self.event_handler.subscribe(other)
-        return self
+    def __add__(self, other):
+        return self.event_handler.subscribe(other)
 
-    def __isub__(self, other):
-        self.event_handler.unsubscribe(other)
-        return self
+    def __sub__(self, other):
+        return self.event_handler.unsubscribe(other)
+
+    def subscribe(self, func: Callable):
+        return self.event_handler.subscribe(func)
+
+    def unsubscribe(self, func: Callable):
+        return self.event_handler.unsubscribe(func)
+
+    def clear_side_effects(self):
+        return self.event_handler.clear_side_effects()
+
+    def mod_call(self, *args, **kwargs):
+        return self.event_handler.mod_call(*args, **kwargs)
+
+    def remove_many(self, funcs: Iterable[Callable]):
+        return self.event_handler.remove_many(funcs)
+
+    def update(self, funcs: Iterable[Callable]):
+        return self.event_handler.update(funcs)
 
 
 class BoundEvent(FunctionStub):
@@ -220,6 +240,8 @@ class EventDescriptor:
 
     def __get__(self, instance: object, owner: Type) -> BoundEvent | Callable:
         event_reg = self.event_name
+        if instance is None:
+            instance = owner
         try:
             istc = getattr(instance, event_reg)
         except AttributeError:

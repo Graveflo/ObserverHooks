@@ -1,3 +1,8 @@
+# - * -coding: utf - 8 - * -
+"""
+
+@author: ☙ Ryan McConnell ♈♑ ❧
+"""
 import inspect
 from functools import partial
 from typing import Callable
@@ -9,7 +14,7 @@ def notify_fork(stub: Callable, event_name: str = None, no_origin=False, is_meth
                 auto_fire=True, handler_t=EventHandler, pass_ref=False) -> EventDescriptor | FunctionStub:
     if is_method is None:
         args = list(inspect.signature(stub).parameters.keys())
-        is_method = args and args[0] == 'self'
+        is_method = isinstance(stub, classmethod) or (args and args[0] == 'self')
     if is_method:
         pass_ref = 0 if pass_ref else 1
         return EventDescriptor(stub, BoundEvent, event_name=event_name, no_origin=no_origin, handler_t=handler_t,
