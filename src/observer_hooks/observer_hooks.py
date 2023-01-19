@@ -13,11 +13,12 @@ from .common import AbortNotifyException
 
 
 class EventHandler:
-    __slots__ = 'subs', 'owner', 'pass_ref', '__weakref__',
+    __slots__ = 'subs', 'owner', 'pass_ref', '__weakref__', '__name__'
 
-    def __init__(self, pass_self=False):
+    def __init__(self, pass_self=False, name=None):
         self.subs = self.make_weak_collection()
         self.pass_ref = 0 if pass_self else 1
+        self.__name__ = name  # "pretending" to be a FunctionType
 
     def make_weak_collection(self):
         return OrderedWeakSet()
@@ -46,6 +47,14 @@ class EventHandler:
         except KeyError:
             return False
 
+    def __iadd__(self, other):
+        self.subscribe(other)
+        return self
+
+    def __isub__(self, other):
+        self.unsubscribe(other)
+        return self
+
     def __call__(self, *args, **kwargs):
         for subf in self.subs:
             subf(*args, **kwargs)
@@ -70,6 +79,9 @@ class EventHandler:
 
     def clear_side_effects(self):
         self.subs.clear()
+
+    def __str__(self):
+        return str(self.__name__)
 
 
 class HardRefEventHandler(EventHandler):
@@ -170,6 +182,14 @@ class FunctionStub:
     def __sub__(self, other):
         return self.event_handler.unsubscribe(other)
 
+    def __isub__(self, other):
+        self.event_handler.unsubscribe(other)
+        return self
+
+    def __iadd__(self, other):
+        self.event_handler.subscribe(other)
+        return self
+
     def subscribe(self, func: Callable):
         return self.event_handler.subscribe(func)
 
@@ -187,6 +207,9 @@ class FunctionStub:
 
     def update(self, funcs: Iterable[Callable]):
         return self.event_handler.update(funcs)
+
+    def __str__(self):
+        return f'{self.__func__.__module__}.{self.__func__.__name__}'
 
 
 class BoundEvent(FunctionStub):
@@ -206,6 +229,16 @@ class BoundEvent(FunctionStub):
     def switch_event_handler(self, event_handler: EventHandler, update=True):
         super(BoundEvent, self).switch_event_handler(event_handler, update=update)
         setattr(self.__self__, self.name, event_handler)
+
+    def __isub__(self, other):
+        print('(observer_hooks) not use __isub___ on methods. Use "unsubscribe()". This operation is deprecated')
+        self.event_handler.unsubscribe(other)
+        return self
+
+    def __iadd__(self, other):
+        print('(observer_hooks) Do not use __iad__ on methods. Use "subscribe()". This operation is deprecated')
+        self.event_handler.subscribe(other)
+        return self
 
     def get_primitives(self):
         return self.name, self.origin, self.auto
@@ -245,7 +278,7 @@ class EventDescriptor:
         try:
             istc = getattr(instance, event_reg)
         except AttributeError:
-            istc = self.handler_t()
+            istc = self.handler_t(name=f'{self.true_owner.__name__}.{self.origin.__name__}')
             istc.pass_ref = self.pass_ref
             istc.owner = self.true_owner
             setattr(instance, event_reg, istc)

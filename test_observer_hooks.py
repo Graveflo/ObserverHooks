@@ -347,7 +347,7 @@ def test_emit_purge():
     hookable.emit(5, 'something')
     assert test_me
     test_me = False
-    hookable.purge()
+    hookable.clear_side_effects()
     hookable()
     assert test_me is False
 
@@ -413,7 +413,7 @@ def test_no_origin():
     def test(intt: int):
         lis.append(intt)
 
-    no_orig.method += test
+    no_orig.method.subscribe(test)
     assert len(lis) == 0
     rnd = random.randint(1, 100)
     no_orig.method(rnd)
@@ -500,7 +500,7 @@ def test_static_method_chain():
         assert not outer_flag3
         some_hooked.subscribe(some_hooked2)
         some_hooked2.subscribe(some_hooked3)
-        some_hooked3 += some_hooked4
+        some_hooked3.subscribe(some_hooked4)
         assert not outer_flag
         assert not outer_flag2
         assert not outer_flag3
@@ -542,7 +542,7 @@ def test_order_of_events():
         pairs = list((func, func.__name__) for func in {some_hooked2, some_hooked3, some_hooked4})
         random.shuffle(pairs)
         for func, _ in pairs:
-            some_hooked += func
+            some_hooked.subscribe(func)
         assert len(order_observed) == 0
         some_hooked()
         assert len(order_observed) == 3
