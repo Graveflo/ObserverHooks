@@ -9,9 +9,11 @@ argument.
 Side effects can be chained normally.
 
 ## Install
-```angular2html
+```
 pip install observer-hooks
 ```
+
+[Documentation](https://ilikescaviar.github.io/ObserverHooks/) (wip)
 
 ## Usage
 

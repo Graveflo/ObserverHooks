@@ -22,7 +22,7 @@ class TestSupportedOddities(TestCase):
                 def sub2():
                     order.append('sub2')
 
-                master.subscribe(sub2)
+                master.hard_subscribe(sub2)
 
             def sub3():
                 order.append('sub3')
