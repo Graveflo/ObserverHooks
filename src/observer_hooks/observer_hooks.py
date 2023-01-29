@@ -3,6 +3,7 @@
 
 @author: ☙ Ryan McConnell ♈♑ ❧
 """
+import inspect
 from _weakrefset import WeakSet
 from functools import partial
 from weakref import WeakMethod
@@ -128,16 +129,20 @@ class HardRefEventHandler(EventHandler):
 
 
 class FunctionStub:
-    __slots__ = 'event_handler', '__func__', 'origin', 'auto', '__weakref__'
+    __slots__ = 'event_handler', '__func__', 'origin', 'auto', '__weakref__', '__wrapped__'
 
     def __init__(self, func: Callable, event_handler: EventHandler, origin: bool, auto: bool):
         self.__func__ = func
         self.event_handler = event_handler
         self.origin = origin
         self.auto = auto
+        self.__wrapped__ = self.__func__
 
     def __eq__(self, other):
-        return self.__func__ is other.__func__
+        if hasattr(other, '__func__'):
+            return self.__func__ is other.__func__
+        else:
+            return False
 
     def __hash__(self):
         return hash(id(self.__func__))
