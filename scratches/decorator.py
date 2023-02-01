@@ -1,4 +1,5 @@
 from typing import Any, Concatenate, ParamSpec, Protocol, Type, TypeVar, Callable, Generic, Self
+from typing import TypedDict, Unpack
 
 T = TypeVar('T')
 T_R = TypeVar('T_R')
@@ -17,6 +18,7 @@ class SomeMethodMessage:
 
 def validate(instance, arg1=0, arg2=1):
     pass
+
 
 class bmw(Generic[P_M, P_F, T]):
     def __init__(self, instance, func: Callable[..., T], message_t):
@@ -49,9 +51,8 @@ class TalkValidator:
         self.func = validation_func
 
 
-from typing import TypedDict, Unpack
+def some_function(soemthing:int, otherthing:str, arg1: int = 0, arg2: str = 'hi'): ...
 
-def some_function(soemthing:int, otherthing:str, arg1: int = 0, arg2: str = 'hi'): pass
 
 def wrap_thing(func: Callable[P_F, T]) -> Protocol[P_F]:
     return type('f', (object,), {})()
@@ -65,7 +66,6 @@ def test(something: Protocol):
     pass
 
 dd = wrap_thing(some_function)
-
 
 
 class ClientCall:
